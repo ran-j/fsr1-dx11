@@ -1,4 +1,6 @@
 ﻿#include <SimpleFSR1.h>
+#include <FSR1.h>
+
 #include <D3Dcompiler.h>
 #include <DirectXMath.h>
 
@@ -76,23 +78,23 @@ void SimpleFSR1::CompileShaders()
 {
 	ID3DBlob *blob = nullptr;
 
-	CompileShaderFromFile(L"FSR1_SHADER.hlsl", "mainCS", "cs_5_0", &blob);
+	CompileInternalShader("mainCS", "cs_5_0", &blob);
 	m_device->CreateComputeShader(blob->GetBufferPointer(), blob->GetBufferSize(), nullptr, &m_csEASU);
 	assert(m_csEASU != nullptr);
 	blob->Release();
 
-	CompileShaderFromFile(L"FSR1_SHADER.hlsl", "main2CS", "cs_5_0", &blob);
+	CompileInternalShader("main2CS", "cs_5_0", &blob);
 	m_device->CreateComputeShader(blob->GetBufferPointer(), blob->GetBufferSize(), nullptr, &m_csRCAS);
 	assert(m_csRCAS != nullptr);
 	blob->Release();
 
-	CompileShaderFromFile(L"FSR1_SHADER.hlsl", "main3CS", "cs_5_0", &blob);
+	CompileInternalShader("main3CS", "cs_5_0", &blob);
 	m_device->CreateComputeShader(blob->GetBufferPointer(), blob->GetBufferSize(), nullptr, &m_csDL);
 	assert(m_csDL != nullptr);
 	blob->Release();
 }
 
-void SimpleFSR1::CompileShaderFromFile(const wchar_t *filename, const char *entryPoint, const char *target, ID3DBlob **blob)
+void SimpleFSR1::CompileInternalShader(const char *entryPoint, const char *target, ID3DBlob **blob)
 {
 	DWORD shaderFlags = D3DCOMPILE_ENABLE_STRICTNESS;
 #if defined(DEBUG) || defined(_DEBUG)
@@ -100,7 +102,18 @@ void SimpleFSR1::CompileShaderFromFile(const wchar_t *filename, const char *entr
 #endif
 
 	ID3DBlob *errorBlob = nullptr;
-	HRESULT hr = D3DCompileFromFile(filename, nullptr, nullptr, entryPoint, target, shaderFlags, 0, blob, &errorBlob);
+	// HRESULT hr = D3DCompileFromFile(filename, nullptr, nullptr, entryPoint, target, shaderFlags, 0, blob, &errorBlob);
+	HRESULT hr = D3DCompile(DefaultShader::fsr1,
+							strlen(DefaultShader::fsr1),
+							nullptr,
+							nullptr,
+							nullptr,
+							entryPoint,
+							target,
+							shaderFlags,
+							0,
+							blob,
+							&errorBlob);
 	if (FAILED(hr))
 	{
 		if (errorBlob)
@@ -218,5 +231,5 @@ void SimpleFSR1::Upscale()
 	// m_context->CSSetShaderResources(20, 1, srvs);
 	// m_context->CSSetShaderResources(21, 1, srvs);
 	// m_context->CSSetShaderResources(22, 1, srvs);
-	// m_context->CSSetShaderResources(23, 1, srvs); 
+	// m_context->CSSetShaderResources(23, 1, srvs);
 }

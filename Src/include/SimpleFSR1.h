@@ -35,7 +35,7 @@ private:
     void ReleaseResources();
 
     void CompileShaders();
-    void CompileShaderFromFile(const wchar_t *filename, const char *entryPoint, const char *target, ID3DBlob **blob);
+    void CompileInternalShader(const char *entryPoint, const char *target, ID3DBlob **blob);
 
 public:
     SimpleFSR1(ID3D11Device *device, ID3D11DeviceContext *context, const int &width, const int &height, const FFX_FSR1_QUALITY_MODE &quality);

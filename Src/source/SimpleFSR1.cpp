@@ -57,20 +57,40 @@ void SimpleFSR1::ReleaseResources()
 		m_texColorBuffer->Release();
 		m_texColorBuffer = nullptr;
 	}
+	if (m_srvColorBuffer)
+	{
+		m_srvColorBuffer->Release();
+		m_srvColorBuffer = nullptr;
+	}
 	if (m_texFSR2x)
 	{
 		m_texFSR2x->Release();
 		m_texFSR2x = nullptr;
+	}
+	if (m_uavFSR2x)
+	{
+		m_uavFSR2x->Release();
+		m_uavFSR2x = nullptr;
 	}
 	if (m_texFSR1L)
 	{
 		m_texFSR1L->Release();
 		m_texFSR1L = nullptr;
 	}
+	if (m_uavFSR1L)
+	{
+		m_uavFSR1L->Release();
+		m_uavFSR1L = nullptr;
+	}
 	if (m_texFSRC)
 	{
 		m_texFSRC->Release();
 		m_texFSRC = nullptr;
+	}
+	if (m_uavFSRC)
+	{
+		m_uavFSRC->Release();
+		m_uavFSRC = nullptr;
 	}
 }
 
@@ -130,31 +150,57 @@ void SimpleFSR1::CompileInternalShader(const char *entryPoint, const char *targe
 
 void SimpleFSR1::SetupResources()
 {
-	// Release existing resources if any
+	// Ensure we release old resources if we are resetting
 	ReleaseResources();
 
 	float upscaleFactor = GetUpscaleFactor();
 	int targetWidth = static_cast<int>(m_width * upscaleFactor);
 	int targetHeight = static_cast<int>(m_height * upscaleFactor);
 
-	D3D11_TEXTURE2D_DESC desc;
-	ZeroMemory(&desc, sizeof(desc));
-	desc.Width = m_width;
-	desc.Height = m_height;
-	desc.MipLevels = 1;
-	desc.ArraySize = 1;
-	desc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
-	desc.SampleDesc.Count = 1;
-	desc.Usage = D3D11_USAGE_DEFAULT;
-	desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS;
+	// Setup texture and SRV/UAV
+	D3D11_TEXTURE2D_DESC texDesc;
+	ZeroMemory(&texDesc, sizeof(texDesc));
+	texDesc.Width = m_width;
+	texDesc.Height = m_height;
+	texDesc.MipLevels = 1;
+	texDesc.ArraySize = 1;
+	texDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+	texDesc.SampleDesc.Count = 1;
+	texDesc.Usage = D3D11_USAGE_DEFAULT;
+	texDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS;
 
-	m_device->CreateTexture2D(&desc, nullptr, &m_texColorBuffer);
-	desc.Width = targetWidth;
-	desc.Height = targetHeight;
-	m_device->CreateTexture2D(&desc, nullptr, &m_texFSR2x);
-	m_device->CreateTexture2D(&desc, nullptr, &m_texFSR1L);
-	m_device->CreateTexture2D(&desc, nullptr, &m_texFSRC);
+	D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc;
+	ZeroMemory(&srvDesc, sizeof(srvDesc));
+	srvDesc.Format = texDesc.Format;
+	srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+	srvDesc.Texture2D.MostDetailedMip = 0;
+	srvDesc.Texture2D.MipLevels = 1;
 
+	D3D11_UNORDERED_ACCESS_VIEW_DESC uavDesc;
+	ZeroMemory(&uavDesc, sizeof(uavDesc));
+	uavDesc.Format = texDesc.Format;
+	uavDesc.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2D;
+	uavDesc.Texture2D.MipSlice = 0;
+
+	// Create color buffer and its SRV
+	m_device->CreateTexture2D(&texDesc, nullptr, &m_texColorBuffer);
+	m_device->CreateShaderResourceView(m_texColorBuffer, &srvDesc, &m_srvColorBuffer);
+
+	// Resize for upscale target dimensions
+	texDesc.Width = targetWidth;
+	texDesc.Height = targetHeight;
+
+	// Create textures and UAVs for upscale
+	m_device->CreateTexture2D(&texDesc, nullptr, &m_texFSR2x);
+	m_device->CreateUnorderedAccessView(m_texFSR2x, &uavDesc, &m_uavFSR2x);
+
+	m_device->CreateTexture2D(&texDesc, nullptr, &m_texFSR1L);
+	m_device->CreateUnorderedAccessView(m_texFSR1L, &uavDesc, &m_uavFSR1L);
+
+	m_device->CreateTexture2D(&texDesc, nullptr, &m_texFSRC);
+	m_device->CreateUnorderedAccessView(m_texFSRC, &uavDesc, &m_uavFSRC);
+
+	// Setup sampler
 	D3D11_SAMPLER_DESC sampDesc;
 	ZeroMemory(&sampDesc, sizeof(sampDesc));
 	sampDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT;
@@ -192,44 +238,25 @@ void SimpleFSR1::SetQualityMode(const FFX_FSR1_QUALITY_MODE &qualityMode)
 
 void SimpleFSR1::Upscale()
 {
-	// Set the compute shaders
+	ID3D11UnorderedAccessView *uavs[] = {m_uavFSR2x, m_uavFSR1L, m_uavFSRC};
+	ID3D11ShaderResourceView *srvs[] = {m_srvColorBuffer};
+
+	// Bind samplers, UAVs and SRVs
 	m_context->CSSetSamplers(0, 1, &m_samplerPoint);
+	m_context->CSSetShaderResources(0, 1, srvs); 
+
+	// EASU Pass
 	m_context->CSSetShader(m_csEASU, nullptr, 0);
+	m_context->CSSetUnorderedAccessViews(0, 1, &uavs[0], nullptr);
 	m_context->Dispatch((m_width + 7) / 8, (m_height + 7) / 8, 1);
 
+	// RCAS Pass
 	m_context->CSSetShader(m_csRCAS, nullptr, 0);
+	m_context->CSSetUnorderedAccessViews(0, 1, &uavs[1], nullptr);
 	m_context->Dispatch((m_width + 15) / 16, (m_height + 15) / 16, 1);
 
+	// DL Pass
 	m_context->CSSetShader(m_csDL, nullptr, 0);
+	m_context->CSSetUnorderedAccessViews(0, 1, &uavs[2], nullptr);
 	m_context->Dispatch((m_width + 7) / 8, (m_height + 7) / 8, 1);
-
-	// Set the resources
-	// ID3D11ShaderResourceView *srvs[1] = {nullptr};
-	// ID3D11UnorderedAccessView *uavs[1] = {nullptr};
-	// ID3D11SamplerState *samplers[1] = {m_samplerPoint};
-
-	// m_context->CSSetShaderResources(0, 1, srvs);
-	// m_context->CSSetShaderResources(1, 1, srvs);
-	// m_context->CSSetShaderResources(2, 1, srvs);
-	// m_context->CSSetShaderResources(3, 1, srvs);
-	// m_context->CSSetShaderResources(4, 1, srvs);
-	// m_context->CSSetShaderResources(5, 1, srvs);
-	// m_context->CSSetShaderResources(6, 1, srvs);
-	// m_context->CSSetShaderResources(7, 1, srvs);
-	// m_context->CSSetShaderResources(8, 1, srvs);
-	// m_context->CSSetShaderResources(9, 1, srvs);
-	// m_context->CSSetShaderResources(10, 1, srvs);
-	// m_context->CSSetShaderResources(11, 1, srvs);
-	// m_context->CSSetShaderResources(12, 1, srvs);
-	// m_context->CSSetShaderResources(13, 1, srvs);
-	// m_context->CSSetShaderResources(14, 1, srvs);
-	// m_context->CSSetShaderResources(15, 1, srvs);
-	// m_context->CSSetShaderResources(16, 1, srvs);
-	// m_context->CSSetShaderResources(17, 1, srvs);
-	// m_context->CSSetShaderResources(18, 1, srvs);
-	// m_context->CSSetShaderResources(19, 1, srvs);
-	// m_context->CSSetShaderResources(20, 1, srvs);
-	// m_context->CSSetShaderResources(21, 1, srvs);
-	// m_context->CSSetShaderResources(22, 1, srvs);
-	// m_context->CSSetShaderResources(23, 1, srvs);
 }

@@ -25,6 +25,10 @@ private:
     ID3D11Texture2D *m_texFSR1L;
     ID3D11Texture2D *m_texFSRC;
     ID3D11SamplerState *m_samplerPoint;
+    ID3D11ShaderResourceView *m_srvColorBuffer;
+    ID3D11UnorderedAccessView *m_uavFSR2x;
+    ID3D11UnorderedAccessView *m_uavFSR1L;
+    ID3D11UnorderedAccessView *m_uavFSRC;
     int m_width;
     int m_height;
     FFX_FSR1_QUALITY_MODE m_qualityMode;

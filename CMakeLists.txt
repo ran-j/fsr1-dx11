@@ -20,7 +20,7 @@ endif()
 
 include_directories("Src/include")
 
-add_library(SimpleFSR1 "Src/source/SimpleFSR1.cpp" "Src/include/SimpleFSR1.h")
+add_library(SimpleFSR1 "Src/source/SimpleFSR1.cpp" "Src/include/SimpleFSR1.h" "Src/include/FSR1.h")
 
 target_include_directories(SimpleFSR1 PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Src/include>
@@ -42,3 +42,29 @@ install(EXPORT SimpleFSR1Targets
 
 install(DIRECTORY include/
   DESTINATION include)
+
+MESSAGE(STATUS "Generating shaders header file...")
+
+set(HEADER_FILE "${CMAKE_CURRENT_SOURCE_DIR}/Src/include/FSR1.h")
+set(SHADERS_NAME
+  fsr1.hlsl
+)
+
+set(SHADERS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Shader")
+file(WRITE ${HEADER_FILE} "#pragma once\n\n")
+file(APPEND ${HEADER_FILE} "// Auto-generated file: Do not modify\n\n")
+file(APPEND ${HEADER_FILE} "namespace DefaultShader {\n")
+
+foreach(SHADER ${SHADERS_NAME})
+  file(READ "${SHADERS_DIR}/${SHADER}" SHADER_CONTENT)
+
+  # Remove the ".hlsl" extension from the shader name
+  string(REGEX REPLACE ".hlsl" "" SHADER ${SHADER})
+
+  file(APPEND ${HEADER_FILE} "static const char *${SHADER} = R\"(\n")
+  file(APPEND ${HEADER_FILE} "${SHADER_CONTENT}\n")
+  file(APPEND ${HEADER_FILE} ")\";\n")
+endforeach()
+
+file(APPEND ${HEADER_FILE} "}\n\n")
+MESSAGE(STATUS "Shaders header file generated")
